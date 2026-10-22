@@ -65,6 +65,7 @@ var TERMS=[
 ["Market cap","Share price times shares outstanding: what the equity of a public company is worth in the market."],
 ["Trading comps","Valuing a company against the multiples (like EV/EBITDA) of similar public companies. Fast and market-based, but only as good as the peer set."],
 ["Precedent transactions","Valuing a company against multiples paid in past acquisitions of similar businesses. Captures control premiums; data can be stale."],
+["Multiple","How many times an earnings figure a company is priced at: value divided by EBITDA, revenue, or net income. Paying 8x EBITDA means 8 dollars of price for each 1 dollar of EBITDA. A higher multiple usually means buyers expect more growth."],
 ["LBO","Leveraged Buyout: buying a company mostly with debt, improving it, and repaying debt from cash flow. Private equity firms live here; returns come from debt paydown and multiple expansion."],
 ["Synergies","Extra value created by combining two companies: cost savings from overlapping functions or revenue gains from cross-selling. Aggressive synergy assumptions kill deals."],
 ["Due diligence","The deep pre-deal investigation of a target's financials, legal exposure, customers, and operations, to confirm what you are actually buying."],
