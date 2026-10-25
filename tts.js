@@ -5,12 +5,13 @@ if(window.__wajoTTS)return;window.__wajoTTS=true;
 var API='https://api.elevenlabs.io/v1';
 var FREE='__browser__';
 var LS_KEY='el_reader_key',LS_VOICE='el_tts_voice';
-var audio=null,stopped=false,queue=[],qi=0,si=0,cache={},voices=[],freeVoices=[],localCache={};
+var audio=null,stopped=false,queue=[],qi=0,si=0,cache={},voices=[],freeVoices=[],localCache={},dragWasPlaying=false;
 var style=document.createElement('style');
 style.textContent=[
 '.tts-bar{position:fixed;right:16px;bottom:16px;z-index:99998;display:flex;align-items:center;gap:8px;background:#13202a;color:#e5ecef;border:1px solid #29343a;border-radius:12px;padding:8px 10px;box-shadow:0 6px 24px rgba(0,0,0,.35);font:13px -apple-system,system-ui,sans-serif;max-width:calc(100vw - 32px)}',
 '.tts-bar button{border:0;border-radius:8px;padding:7px 12px;font:600 13px -apple-system,system-ui,sans-serif;cursor:pointer;background:#4cc2b1;color:#06201c}',
 '.tts-bar button.ghost{background:#1b252a;color:#e5ecef;border:1px solid #29343a}',
+'.tts-bar input[type=range]{width:min(300px,38vw);accent-color:#4cc2b1;margin:0;padding:0;cursor:pointer}',
 '.tts-bar select{background:#1b252a;color:#e5ecef;border:1px solid #29343a;border-radius:8px;padding:6px 8px;font:13px -apple-system,system-ui,sans-serif;max-width:150px}',
 '.tts-status{color:#a8b4bb;font-size:12px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
 '.tts-active{outline:3px solid #4cc2b1 !important;outline-offset:3px;border-radius:4px;transition:outline-color .2s}',
@@ -24,11 +25,16 @@ function bar(){
  var b=document.createElement('div');b.className='tts-bar';b.id='tts-bar';
  b.innerHTML='<button id="tts-play" title="Reads your selection, or the whole case">▶ Read</button>'+
  '<button id="tts-stop" class="ghost" title="Stop">■</button>'+
+ '<input id="tts-pos" type="range" min="0" max="0" value="0" step="1" title="Drag to jump anywhere in the read-aloud">'+
  '<select id="tts-voice" title="Voice"><option>Loading voices…</option></select>'+
  '<span class="tts-status" id="tts-status"></span>';
  document.body.appendChild(b);
  document.getElementById('tts-play').addEventListener('click',toggle);
  document.getElementById('tts-stop').addEventListener('click',stopAll);
+ var s=document.getElementById('tts-pos');
+ s.addEventListener('pointerdown',function(){dragWasPlaying=(audio&&!audio.paused)||(function(){try{return speechSynthesis.speaking}catch(e){return false}})();if(dragWasPlaying){try{speechSynthesis.cancel()}catch(e){}if(audio){audio.onended=null;audio.pause();audio=null}clearHi();stopped=true}});
+ s.addEventListener('input',onDrag);
+ s.addEventListener('change',onDrop);
  var v=document.getElementById('tts-voice');
  v.addEventListener('change',function(){try{localStorage.setItem(LS_VOICE,v.value)}catch(e){}});
  return b;
@@ -158,6 +164,7 @@ function playNext(){
  var item=queue[qi];
  if(item.el){item.el.classList.add('tts-active');item.el.scrollIntoView({block:'center',behavior:'smooth'})}
  status('Reading '+(qi+1)+'/'+queue.length);
+ syncPos();
  if(item.el){
   fetchLocal(item.t,function(blob){
    if(stopped)return;
@@ -171,16 +178,20 @@ function playNext(){
 }
 function clearHi(){document.querySelectorAll('.tts-active').forEach(function(e){e.classList.remove('tts-active')})}
 function stopAll(){
- stopped=true;queue=[];qi=0;si=0;
+ stopped=true;
  try{speechSynthesis.cancel()}catch(e){}
- if(audio){audio.pause();audio=null}
- clearHi();status('');
+ if(audio){audio.onended=null;audio.pause();audio=null}
+ clearHi();
  var p=document.getElementById('tts-play');if(p)p.textContent='▶ Read';
+ if(queue.length&&qi<queue.length){status('Stopped at '+(qi+1)+' / '+queue.length+'. Drag the bar, then Read.')}
+ else{status('');queue=[];qi=0;si=0}
+ syncPos();
 }
 function toggle(){
  var p=document.getElementById('tts-play');
  if(audio&&!audio.paused){audio.pause();p.textContent='▶ Paused';status('Paused');return}
  if(audio&&audio.paused&&queue.length){audio.play();p.textContent='❚❚';return}
+ if(stopped&&queue.length&&qi<queue.length){stopped=false;si=0;p.textContent='❚❚';playNext();return}
  try{
   if(isFree()&&speechSynthesis.speaking){speechSynthesis.pause();p.textContent='▶ Paused';status('Paused');return}
   if(isFree()&&speechSynthesis.paused){speechSynthesis.resume();p.textContent='❚❚';return}
@@ -191,8 +202,30 @@ function toggle(){
  if(isFree()){status(b.whole?'Whole case, saved voices':'Reading your selection')}
  else if(b.whole){var n=b.q.reduce(function(a,c){return a+c.t.length},0);status('Whole case… starting')}
  else{status('Reading your selection')}
- queue=b.q;qi=0;p.textContent='❚❚';
+ queue=b.q;qi=0;si=0;syncPos();p.textContent='❚❚';
  playNext();
+}
+function syncPos(){
+ var s=document.getElementById('tts-pos');if(!s)return;
+ s.max=Math.max(0,queue.length-1);s.value=Math.min(qi,Math.max(0,queue.length-1));
+}
+function ensureQueue(){
+ if(!queue.length){var b=buildQueue();queue=b.q;qi=0;si=0;stopped=true;}
+ syncPos();
+}
+function onDrag(){
+ ensureQueue();
+ var s=document.getElementById('tts-pos');if(!s)return;
+ var v=+s.value;qi=v;si=0;
+ clearHi();
+ var it=queue[v];
+ if(it&&it.el){it.el.classList.add('tts-active');it.el.scrollIntoView({block:'center',behavior:'smooth'})}
+ status('Jump to '+(v+1)+' / '+queue.length);
+}
+function onDrop(){
+ if(dragWasPlaying&&queue.length){stopped=false;si=0;var p=document.getElementById('tts-play');if(p)p.textContent='❚❚';playNext()}
+ else{status('Ready at '+(qi+1)+' / '+queue.length+'.')}
+ dragWasPlaying=false;
 }
 function loadVoices(){
  var sel=document.getElementById('tts-voice');
